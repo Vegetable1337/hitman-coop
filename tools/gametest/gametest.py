@@ -8,6 +8,7 @@ bot (HitmanCoop-NetTest.exe bot) as the partner and a local relay, and writes wh
         --version V   the build to test (default: the one in plugin/Src/CoopText.h), from
                       _dist/HitmanCoop-V (run tools/package.ps1 first)
         --no-shots    no screenshots
+        --nettest PATH  use a locally built connection test executable
 
 Each run gets tools/gametest/results/<time>/: report.md and report.json (every check, passed or
 not, with what was seen), HitmanCoop.log, the bot's and the relay's output, the status timeline
@@ -34,6 +35,7 @@ What the scenarios check:
 import argparse
 import datetime
 import json
+import math
 import os
 import re
 import shutil
@@ -438,8 +440,14 @@ def scenario_npc(g, r, ctx):
     p.join(code, relay)
     s = g.wait("the bot in sync", lambda s: s.get("synced"), 60)
     r.check("the bot joins and syncs", s.get("synced"), s.get("state"))
-    g.wait("the stand-in shown", lambda s: s.get("partnerSpawned"), 30)
+    avatar = g.wait("the stand-in shown", lambda s: s.get("partnerSpawned") and s.get("partner") and s.get("local"), 30)
     time.sleep(3)
+    moved = g.status() or {}
+    partner_distance = math.dist(avatar["partner"], moved["partner"]) if moved.get("partner") else 0
+    local_distance = math.dist(avatar["local"], moved["local"]) if moved.get("local") else math.inf
+    r.check("the partner moves independently of the local agent",
+            moved.get("partnerSpawned") and partner_distance > 1 and local_distance < 0.1,
+            f"partner {partner_distance:.2f} m, local {local_distance:.2f} m")
     g.shot("together")
     r.check("the log says they are together", g.wait_log(r"sync +\| together in the mission", 10, start) is not None)
 
@@ -506,11 +514,7 @@ def scenario_npc(g, r, ctx):
     total = (pins[1] + pins[8] + pins[9]) if pins else 0
     r.check("pins: puppets are pinned, the engine's world matrix is recognised, few poses unusable (under 10%)",
             pins is not None and pins[0] > 0 and pins[9] < 0.1 * total and "not recognised" not in (line or ""), (line or "")[-230:])
-    # 47 next to the bot's puppets, for a look at them.
-    spot = numbers(g.status().get("shared", ""), r"partner at (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)")
-    if spot:
-        g.command("goto {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(spot[0] + 4, spot[1] + 4, spot[2], spot[0], spot[1]))
-        time.sleep(3)
+    # Keep 47 away from the bot so ownership remains with the bot through npcdrop.
     g.shot("pins-on")
     g.command("pins yaw 90")
     time.sleep(3)
@@ -651,10 +655,13 @@ def scenario_restart(g, r, ctx):
         return
     start = len(g.log())
     g.command("restart")
-    s = g.wait("the mission back after the restart", lambda s: s.get("inScene") and s.get("synced"), 150)
+    rejoined = g.wait_log(r"together in the mission", 150, start)
+    r.check("the log has the restart", rejoined is not None, rejoined or "")
+    if rejoined is None:
+        return
+    s = g.wait("the mission back after the restart", lambda s: s.get("inScene") and s.get("synced"), 10)
     r.check("restart: back in the mission and in sync", s.get("synced"), s.get("state"))
     r.check("no crash on restart", g.running() and not os.path.exists(g.cmd + ".crash"))
-    r.check("the log has the restart", g.wait_log(r"together in the mission", 10, start) is not None)
     g.shot("after-restart")
 
 
@@ -743,7 +750,8 @@ def scenario_netsim(r, ctx):
     procs = [relay]
     try:
         time.sleep(1.5)
-        host = subprocess.Popen([nettest, "host", "--relay", "127.0.0.1:47199", "--seconds", "300"], stdout=host_out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        host = subprocess.Popen([nettest, "host", "47198", "--relay", "127.0.0.1:47199", "--seconds", "300"],
+                                stdout=host_out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         procs.append(host)
 
         def host_lines():
@@ -966,6 +974,7 @@ def main():
     ap.add_argument("--version")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--no-shots", action="store_true")
+    ap.add_argument("--nettest", help="path to a locally built connection test executable")
     ap.add_argument("scenarios", nargs="*", default=["smoke"])
     a = ap.parse_args()
 
@@ -976,9 +985,11 @@ def main():
 
     version = a.version or re.search(r'c_ModVersion = "([^"]+)"', open(os.path.join(ROOT, "plugin", "Src", "CoopText.h")).read()).group(1)
     stage = os.path.join(ROOT, "_dist", f"HitmanCoop-{version}")
-    nettest = os.path.join(stage, "Test-Connection.exe")
-    if not os.path.isdir(stage):
+    nettest = os.path.abspath(a.nettest) if a.nettest else os.path.join(stage, "Test-Connection.exe")
+    if (not a.nettest or any(n != "netsim" for n in names)) and not os.path.isdir(stage):
         sys.exit(f"no {stage}: run tools/package.ps1 first")
+    if a.nettest and not os.path.isfile(nettest):
+        sys.exit(f"connection test executable not found: {nettest}")
 
     game_names = [n for n in names if n in GAME_SCENARIOS]
     folder = None

@@ -10,11 +10,16 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Find-Dumpbin {
+    $OnPath = Get-Command dumpbin.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($OnPath) { return $OnPath.Source }
+
     $VsWhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-    foreach ($Vs in & $VsWhere -products * -all -property installationPath) {
-        $Found = Get-ChildItem (Join-Path $Vs "VC\Tools\MSVC") -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match "Hostx64\\x64" } | Select-Object -First 1
-        if ($Found) { return $Found.FullName }
+    if (Test-Path -LiteralPath $VsWhere) {
+        foreach ($Vs in & $VsWhere -products * -all -property installationPath) {
+            $Found = Get-ChildItem (Join-Path $Vs "VC\Tools\MSVC") -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match "Hostx64\\x64" } | Select-Object -First 1
+            if ($Found) { return $Found.FullName }
+        }
     }
     throw "dumpbin.exe not found. Install Visual Studio (Build Tools) with the C++ workload."
 }
@@ -44,8 +49,8 @@ $Runtime = $Deps | Where-Object { $_ -match '^(vcruntime|msvcp|ucrtbase|api-ms-w
 Check (-not $Runtime) "no Visual C++ runtime dependency ($($Deps -join ', '))"
 
 # The SDK's own mods import ZHMModSDK, KERNEL32, USER32, SHELL32 and IMM32 (ImGui) too. WINHTTP
-# and bcrypt (Windows' own, on every PC) are the self-updater's download and SHA-256.
-$Allowed = "ZHMModSDK.dll", "KERNEL32.dll", "USER32.dll", "WS2_32.dll", "VERSION.dll", "ADVAPI32.dll", "SHELL32.dll", "IMM32.dll", "ole32.dll", "WINHTTP.dll", "bcrypt.dll"
+# and bcrypt are used for downloads and SHA-256. IPHLPAPI supplies GetAdaptersAddresses.
+$Allowed = "ZHMModSDK.dll", "KERNEL32.dll", "USER32.dll", "WS2_32.dll", "VERSION.dll", "ADVAPI32.dll", "SHELL32.dll", "IMM32.dll", "ole32.dll", "WINHTTP.dll", "bcrypt.dll", "IPHLPAPI.dll"
 $Unknown = $Deps | Where-Object { $_ -notin $Allowed }
 Check (-not $Unknown) "depends only on the SDK and Windows DLLs$(if ($Unknown) { ': unexpected ' + ($Unknown -join ', ') })"
 

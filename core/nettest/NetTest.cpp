@@ -219,6 +219,7 @@ int Run(bool p_Host, const std::string& p_Address, uint16_t p_Port) {
     double s_WorstRtt = 0.0;
     double s_LastRtt = 0.0;
     size_t s_LogSeen = 0;
+    NpcSyncReport s_LastCompleteNpcCheck;
 
     while (true) {
         const double s_Now = Now();
@@ -296,6 +297,9 @@ int Run(bool p_Host, const std::string& p_Address, uint16_t p_Port) {
         }
 
         if (s_SyncedAt >= 0.0) {
+            if (s_Status.npcCheck.at >= 0.0 && s_Status.npcCheck.complete)
+                s_LastCompleteNpcCheck = s_Status.npcCheck;
+
             if (s_Status.state == SessionState::Connected) {
                 s_LastRtt = s_Status.stats.rttMs;
                 s_WorstRtt = std::max(s_WorstRtt, s_LastRtt);
@@ -332,15 +336,18 @@ int Run(bool p_Host, const std::string& p_Address, uint16_t p_Port) {
     const auto& s_Npc = s_World.npcs[c_KillTarget];
     const bool s_KillOk = !s_Npc.Alive() && (p_Host ? s_World.killCalls[c_KillTarget] == 1 : true);
     const bool s_PartnerOk = s_SawPartner && s_PartnerTravel > 3.f;
-    const bool s_NpcsOk = p_Host || s_Status.npcsTracked == c_NpcCount;
+    // Snapshot counts exclude NPCs simulated by this peer. The comparison covers both owners.
+    const bool s_NpcsOk = s_LastCompleteNpcCheck.same == c_NpcCount &&
+        s_LastCompleteNpcCheck.compared == c_NpcCount && s_LastCompleteNpcCheck.lifeDiffers == 0 &&
+        s_LastCompleteNpcCheck.onlyOurs == 0 && s_LastCompleteNpcCheck.onlyTheirs == 0;
     const double s_Loss = s_Status.stats.packetsSent ? 100.0 * s_Status.stats.resends / s_Status.stats.packetsSent : 0.0;
 
     std::printf("\nResults\n");
     std::printf("  %s  connection and mission sync\n", "PASS");
     std::printf("  %s  partner position received and moving (%.0f m walked)\n", s_PartnerOk ? "PASS" : "FAIL",
                 s_PartnerTravel);
-    std::printf("  %s  NPCs tracked from the host (%zu of %d)\n", s_NpcsOk ? "PASS" : "FAIL",
-                p_Host ? static_cast<size_t>(c_NpcCount) : s_Status.npcsTracked, c_NpcCount);
+    std::printf("  %s  NPCs agree across both peers (%zu of %d within 1 m)\n", s_NpcsOk ? "PASS" : "FAIL",
+                s_LastCompleteNpcCheck.same, c_NpcCount);
     std::printf("  %s  friend's kill made official by the host\n", s_KillOk ? "PASS" : "FAIL");
     std::printf("  ping %.0f ms (worst %.0f), resent %.1f%% of packets\n", s_LastRtt, s_WorstRtt, s_Loss);
 

@@ -1,3 +1,61 @@
+# Hitman 3 Co-op
+
+Это форк [HITMAN Co-op 0.14.0](https://github.com/JordanRodrigues021/hitman-coop/tree/v0.14.0) от Jordan Rodrigues. Изменения форка от 18 ноября 2026 года добавляют русскую инструкцию и уточняют сетевые и игровые проверки. Проверенная конфигурация использует Steam-версию игры **3.290.1.0** и **ZHMModSDK 4.2.1**. Результаты собраны в [PROGRESS.md](PROGRESS.md).
+
+## Установка на оба компьютера
+
+1. Закройте HITMAN. Скачайте и полностью распакуйте `HitmanCoop-0.14.0.zip` из [релиза автора](https://github.com/JordanRodrigues021/hitman-coop/releases/tag/v0.14.0).
+2. В PowerShell выполните `Get-FileHash .\HitmanCoop-0.14.0.zip` и сравните результат с `SHA256SUMS.txt` из того же релиза.
+3. Откройте `HitmanCoop-Setup.exe` из распакованного каталога. Укажите папку игры, в которой лежит `Retail\HITMAN3.exe`, и выберите **Install**. Если в `Retail` уже установлен другой SDK, сохраните копию его файлов и `mods.ini` перед установкой.
+4. Для игры вдвоём используйте одну и ту же версию мода на обоих компьютерах.
+
+## Первый запуск вдвоём
+
+1. В Steam нажмите **Играть** и выберите обычный запуск HITMAN World of Assassination. Когда игра откроется, нажмите физическую клавишу под Esc (`Ё` на русской клавиатуре). ZHMModSDK 4.2.1 распознаёт эту клавишу при любой раскладке. В панели SDK должна появиться кнопка **CO-OP**.
+2. На обоих компьютерах запустите одну и ту же обычную миссию, желательно с одинаковой точкой старта. Первый игрок откроет **CO-OP → Play → HOST** в секции **Host a game**. Второй введёт IP первого в **Join a friend** и нажмёт **Join**. Для подключения по IP поле ретранслятора в настройках можно оставить пустым.
+3. Для игры через интернет по IP используйте адрес хоста в общей приватной сети [Tailscale](https://tailscale.com/download). Хосту нужен входящий UDP на порт `47047` через выбранный интерфейс. Если у вас уже есть ретранслятор, укажите один и тот же адрес в **Settings → Connection** и подключитесь по коду хоста.
+4. По очереди пройдите несколько метров и развернитесь. На каждом экране должна двигаться отдельная модель напарника, а управление своим агентом должно сохраняться. Затем гость нажмёт **Leave**. Модель должна исчезнуть, а хост сможет продолжить играть.
+
+Прямое подключение, движение модели и перезапуск миссии проверены в Steam-игре с локальным ботом. Сеанс на двух ПК через интернет и синхронное завершение миссии ещё требуют проверки. Для диагностики используйте **CO-OP → About → Copy diagnostics** и локальный журнал `Retail\mods\HitmanCoop.log`. [Результаты тестов](PROGRESS.md)
+
+## Сборка из исходников
+
+Установите [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/downloads/) с рабочей нагрузкой **Разработка классических приложений на C++**, инструментами **MSVC v143 x64/x86**, Windows 10/11 SDK и **C++ CMake tools for Windows**. Для сборки DLL заголовки SDK требуют C++23. Сетевое ядро можно собирать отдельно с C++20.
+
+Откройте **Developer PowerShell for VS 2022** в каталоге проекта и выполните команды.
+
+```powershell
+.\tools\fetch-sdk.ps1
+cmake -S . -B _build -G "Visual Studio 17 2022" -A x64 -DZHMMODSDK_DEVPKG_DIR="$PWD/_deps/devpkg"
+cmake --build _build --config RelWithDebInfo
+cmake --install _build --config RelWithDebInfo --prefix _build/install
+.\tools\check-dll.ps1
+```
+
+Инструкция автора по зависимостям, тестам и упаковке доступна в [BUILDING.md](BUILDING.md).
+
+Чтобы проверить локальный ретранслятор с задержкой и потерей пакетов, запустите из папки проекта тест с локально собранной утилитой.
+
+```powershell
+python -I .\tools\gametest\gametest.py --nettest .\_build\install\HitmanCoop-NetTest.exe netsim
+```
+
+Тест использует UDP-порты 47198 и 47199 и сохраняет результаты в `tools\gametest\results`. Игровой хост может использовать свой порт 47047 в это же время.
+
+## Удаление
+
+Закройте игру и нажмите **Uninstall** в установщике. Если устанавливали через PowerShell, откройте распакованный каталог релиза и выполните команду ниже, подставив свой путь к игре. Установщик использует манифест с перечнем добавленных файлов и возвращает заменённые файлы из резервной копии.
+
+```powershell
+.\installer.ps1 -GamePath "D:\SteamLibrary\steamapps\common\HITMAN 3" -Uninstall -NoFirewall -Quiet
+```
+
+## Лицензия
+
+Исходный мод Jordan Rodrigues и этот форк распространяются по [GNU GPL версии 3 или более поздней](LICENSE). ZHMModSDK распространяется по [своей лицензии GNU GPL](https://github.com/OrfeasZ/ZHMModSDK/blob/v4.2.1/LICENSE).
+
+## Оригинальная документация проекта
+
 # HITMAN Co-op
 
 Two-player co-op for HITMAN World of Assassination. Made by Jordan Rodrigues.
@@ -21,7 +79,7 @@ It's free, it's open source, and I keep updating it.
 
 ## 0.14.0: the milestone
 
-**[Download 0.14.0](../../releases/latest)**. Both players need it (it doesn't connect to 0.13.x).
+**[Download 0.14.0](https://github.com/JordanRodrigues021/hitman-coop/releases/tag/v0.14.0)**. Both players need it (it doesn't connect to 0.13.x).
 If you have 0.13.2 it updates itself the next time you start the game.
 
 This is the biggest update so far. It has everything from the six 0.13.9x betas (a new setup that
@@ -164,7 +222,7 @@ colours, and there's a streamer mode that hides join codes and IP addresses.
 Both of you do this. It takes about a minute.
 
 1. Close the game.
-2. Go to the [Releases page](../../releases/latest) and download `HitmanCoop-Setup-<version>.exe`.
+2. Go to the [upstream Releases page](https://github.com/JordanRodrigues021/hitman-coop/releases) and download `HitmanCoop-Setup-<version>.exe`.
    That's the only file you need.
 3. Run it and click INSTALL. It finds HITMAN on Steam or Epic on its own and installs the mod loader
    ([ZHMModSDK](https://github.com/OrfeasZ/ZHMModSDK)) and the mod. If it can't find the game, click
