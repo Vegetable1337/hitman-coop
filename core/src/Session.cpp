@@ -96,7 +96,8 @@ void Session::Join(std::unique_ptr<IDatagramSocket> p_Socket, const Endpoint& p_
     m_LocalReadyEpoch = 0;
     m_LocalInScene = m_World.IsInScene();
 
-    Log(LogLevel::Info, "net", "joining %s %s (mod %s, protocol %u, game %s)", p_Host.IsRelay() ? "through the co-op server," : "directly,",
+    const char* s_Transport = p_Host.steamPeer ? "through Steam," : p_Host.IsRelay() ? "through the co-op server," : "directly,";
+    Log(LogLevel::Info, "net", "joining %s %s (mod %s, protocol %u, game %s)", s_Transport,
         p_Host.ToString().c_str(), m_Config.modVersion.c_str(), kProtocolVersion, m_Config.gameVersion.c_str());
 
     MsgHello s_Hello;

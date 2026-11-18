@@ -9,6 +9,7 @@
 // `test_control` setting (mods/HitmanCoop.ini, [general]) names a file; players never need it.
 //
 //   <file>          one command per write: host | join <code or address> | leave | relay <host[:port]>
+//                   | steamhost | steaminvite (start a Steam lobby or open its invite dialog)
 //                   | npcs (writes the actors that are not alive to the trace)
 //                   | inputlog (traces the input actions the game asks about for 3 s)
 //                   | press <action> (that input action reads as pressed for one frame)

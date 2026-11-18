@@ -7,22 +7,23 @@
 
 namespace coop {
 
-// Where a peer is: an IPv4 address and port (host byte order), or a peer reached through the
-// co-op relay server when relayPeer is set (see RelaySocket).
+// Address of a peer on one transport: IPv4/port (host byte order), relay, or Steam.
 struct Endpoint {
     uint32_t ip = 0;
     uint16_t port = 0;
     uint32_t relayPeer = 0;
+    uint64_t steamPeer = 0;
 
     bool IsRelay() const { return relayPeer != 0; }
 
     bool operator==(const Endpoint& p_Other) const {
-        return ip == p_Other.ip && port == p_Other.port && relayPeer == p_Other.relayPeer;
+        return ip == p_Other.ip && port == p_Other.port && relayPeer == p_Other.relayPeer && steamPeer == p_Other.steamPeer;
     }
 
     bool operator!=(const Endpoint& p_Other) const { return !(*this == p_Other); }
 
     static Endpoint Relay(uint32_t p_Peer) { return { 0, 0, p_Peer }; }
+    static Endpoint Steam(uint64_t p_Peer) { return { 0, 0, 0, p_Peer }; }
 
     std::string ToString() const;
 };

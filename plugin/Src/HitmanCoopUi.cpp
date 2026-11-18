@@ -1016,6 +1016,16 @@ void HitmanCoop::DrawPlayTab(const coop::SessionStatus& p_Status, bool p_InMissi
     const bool s_Active = p_Status.role != coop::SessionRole::None;
     const Palette s_Palette = Colours(m_ColourBlind);
 
+    bool s_SteamAvailable, s_SteamPending, s_SteamHosting;
+    std::string s_SteamNotice;
+    {
+        std::lock_guard s_Lock(m_StatusMutex);
+        s_SteamAvailable = m_SteamAvailable;
+        s_SteamPending = m_SteamPending;
+        s_SteamHosting = m_SteamHosting;
+        s_SteamNotice = m_SteamNotice;
+    }
+
     if (!s_Active) {
         SectionTitle(ICON_MD_PERSON " You");
         ImGui::SetNextItemWidth(260.f * m_WindowScale);
@@ -1057,6 +1067,15 @@ void HitmanCoop::DrawPlayTab(const coop::SessionStatus& p_Status, bool p_InMissi
             if (WideButton(ICON_MD_WIFI_TETHERING " HOST", 36.f * m_WindowScale)) {
                 SaveSettings();
                 PushCommand({ Command::Kind::Host, {}, static_cast<uint16_t>(m_Port), m_NameBuffer, m_RelayBuffer });
+            }
+
+            if (s_SteamPending) {
+                if (ImGui::Button("Cancel Steam lobby"))
+                    PushCommand({ Command::Kind::SteamCancel });
+            }
+            else if (s_SteamAvailable && WideButton("HOST VIA STEAM", 36.f * m_WindowScale)) {
+                SaveSettings();
+                PushCommand({ Command::Kind::SteamHost, {}, 0, m_NameBuffer });
             }
 
             ImGui::TableNextColumn();
@@ -1114,8 +1133,17 @@ void HitmanCoop::DrawPlayTab(const coop::SessionStatus& p_Status, bool p_InMissi
             PushCommand({ Command::Kind::Reconnect });
 
         ImGui::Spacing();
+        if (!s_SteamNotice.empty())
+            ImGui::TextWrapped("%s", s_SteamNotice.c_str());
         ImGui::TextDisabled("Both players need HITMAN Co-op %s and a location they both own. Start a mission, then host or join.", c_ModVersion);
         return;
+    }
+
+    if (s_SteamHosting && p_Status.state != coop::SessionState::Connected) {
+        SectionTitle("Steam lobby");
+        if (ImGui::Button("Invite Steam friend"))
+            PushCommand({ Command::Kind::SteamInvite });
+        ImGui::TextWrapped("Your friend can accept the invitation in Steam and start the same mission.");
     }
 
     // The join code, big, while hosting.

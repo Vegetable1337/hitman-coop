@@ -19,6 +19,7 @@ class ZTemplateEntityFactory;
 
 #include "Hotkeys.h"
 #include "SdkWorld.h"
+#include "SteamCoop.h"
 #include "TestChannel.h"
 #include "Updater.h"
 #include "coop/GameEvents.h"
@@ -33,8 +34,7 @@ class ZApplicationEngineWin32;
 struct SHitInfo;
 
 // Two-player co-op for HITMAN World of Assassination. One player hosts from the in-game SDK
-// menu and gets a join code from the co-op relay server (server/relay.py); the other joins with
-// the code, or directly by address. No IOI, Peacock or store servers are involved.
+// menu and the other joins by Steam invitation, relay code, or direct address.
 class HitmanCoop : public IPluginInterface {
 public:
     HitmanCoop();
@@ -76,6 +76,7 @@ private:
 
     void OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent);
     void ProcessCommands(double p_Now);
+    void UpdateSteamCoop(double p_Now);
     void PublishStatus();
     void LoadSettings();
     void SaveSettings();
@@ -213,6 +214,8 @@ private:
     // Game thread state. Hooks may run on other threads, so session access is serialized.
     std::recursive_mutex m_SessionMutex;
     SdkWorld m_World;
+    SteamCoop m_SteamCoop;
+    std::string m_SteamHostName;
     std::unique_ptr<coop::Session> m_Session;
     std::string m_GameVersion;
     std::string m_LanAddress;
@@ -341,7 +344,8 @@ private:
 
     // Requests from the UI (render thread), handled on the game thread.
     struct Command {
-        enum class Kind { Host, Join, Leave, Chat, QuickChat, Regroup, Ping, ComeHere, ReadyCheck, Countdown, Signal, Kick, Reconnect } kind;
+        enum class Kind { Host, Join, Leave, Chat, QuickChat, Regroup, Ping, ComeHere, ReadyCheck, Countdown, Signal, Kick, Reconnect,
+            SteamHost, SteamInvite, SteamCancel } kind;
         std::string address;   // join: code or address
         uint16_t port = 0;
         std::string name;
@@ -358,6 +362,10 @@ private:
     coop::SessionStatus m_Status;
     bool m_InMission = false;
     std::optional<coop::RelayState> m_RelayStatus;
+    bool m_SteamAvailable = false;
+    bool m_SteamPending = false;
+    bool m_SteamHosting = false;
+    std::string m_SteamNotice;
 
     // UI state (render thread).
     bool m_ShowWindow = false;

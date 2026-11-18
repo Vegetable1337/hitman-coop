@@ -1277,6 +1277,23 @@ void HitmanCoop::ProcessCommands(double p_Now) {
     }
 
     for (const auto& s_Command : s_Commands) {
+        if (s_Command.kind == Command::Kind::SteamHost) {
+            if (m_Unsupported.empty() && (!m_Session || !m_Session->Active())) {
+                m_SteamHostName = s_Command.name;
+                m_SteamCoop.Host();
+            }
+            continue;
+        }
+        if (s_Command.kind == Command::Kind::SteamInvite) {
+            m_SteamCoop.Invite();
+            continue;
+        }
+        if (s_Command.kind == Command::Kind::SteamCancel) {
+            m_SteamCoop.Cancel();
+            std::lock_guard s_Lock(m_StatusMutex);
+            m_SteamNotice.clear();
+            continue;
+        }
         if (s_Command.kind == Command::Kind::Chat || s_Command.kind == Command::Kind::QuickChat) {
             if (m_Session && m_Session->Status().state == coop::SessionState::Connected) {
                 m_Session->SendChat(s_Command.address, s_Command.kind == Command::Kind::QuickChat);
@@ -1368,6 +1385,12 @@ void HitmanCoop::ProcessCommands(double p_Now) {
         if (!m_Unsupported.empty() && s_Command.kind != Command::Kind::Leave) {
             m_World.Notify("Co-op is off. " + UnsupportedText());
             continue;
+        }
+
+        m_SteamCoop.Cancel();
+        {
+            std::lock_guard s_Lock(m_StatusMutex);
+            m_SteamNotice.clear();
         }
 
         if (m_Session && m_Session->Active())
@@ -1481,6 +1504,37 @@ void HitmanCoop::ProcessCommands(double p_Now) {
     }
 }
 
+void HitmanCoop::UpdateSteamCoop(double p_Now) {
+    const bool s_CanJoin = m_Unsupported.empty() && (!m_Session || !m_Session->Active());
+    auto s_Ready = m_SteamCoop.Update(s_CanJoin);
+    if (s_Ready.socket && s_CanJoin) {
+        m_LastJoin.reset();
+        m_Reconnecting = false;
+        m_ReconnectAt = 0.0;
+        m_Relay.reset();
+        m_RelayCodeShown = m_RelayFailShown = false;
+
+        coop::SessionConfig s_Config;
+        const std::string s_Name = s_Ready.mode == SteamCoop::Transfer::Host
+            ? m_SteamHostName : GetSetting("general", "player_name", "Agent").c_str();
+        s_Config.playerName = s_Name.empty() ? "Agent" : s_Name;
+        s_Config.modVersion = c_ModVersion;
+        s_Config.gameVersion = m_GameVersion;
+        m_Session = std::make_unique<coop::Session>(m_World, s_Config);
+        if (s_Ready.mode == SteamCoop::Transfer::Host)
+            m_Session->Host(std::move(s_Ready.socket));
+        else
+            m_Session->Join(std::move(s_Ready.socket), s_Ready.host, p_Now);
+    }
+
+    if (auto s_Notice = m_SteamCoop.TakeNotice(); !s_Notice.empty()) {
+        CoopLog::Info("steam", s_Notice);
+        m_World.Notify(s_Notice);
+        std::lock_guard s_Lock(m_StatusMutex);
+        m_SteamNotice = std::move(s_Notice);
+    }
+}
+
 void HitmanCoop::OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent) {
     std::lock_guard s_Lock(m_SessionMutex);
 
@@ -1564,6 +1618,7 @@ void HitmanCoop::OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent) {
     }
 
     ProcessCommands(s_Now);
+    UpdateSteamCoop(s_Now);
 
     const bool s_JustEntered = m_World.UpdateSceneState();
 
@@ -1795,6 +1850,10 @@ void HitmanCoop::RunTestChannel(double p_Now) {
 
         if (s_Verb == "host")
             m_Commands.push_back({ Command::Kind::Host, {}, static_cast<uint16_t>(m_Port), "Test host", m_RelayBuffer });
+        else if (s_Verb == "steamhost")
+            m_Commands.push_back({ Command::Kind::SteamHost, {}, 0, "Test host" });
+        else if (s_Verb == "steaminvite")
+            m_Commands.push_back({ Command::Kind::SteamInvite });
         else if (s_Verb == "join")
             m_Commands.push_back({ Command::Kind::Join, s_Arg, 0, "Test client", m_RelayBuffer });
         else if (s_Verb == "leave")
@@ -2242,6 +2301,9 @@ void HitmanCoop::PublishStatus() {
     m_OverlayPauseFor = m_World.PartnerPausedFor();
     m_OverlayPauseLeft = SdkWorld::c_PauseHoldMax - m_OverlayPauseFor;
     m_InMission = m_World.IsInScene();
+    m_SteamAvailable = m_SteamCoop.Available();
+    m_SteamPending = m_SteamCoop.Pending();
+    m_SteamHosting = m_SteamCoop.Hosting();
 
     if (s_Now - m_StandInTextAt > 0.5) {
         m_StandInTextAt = s_Now;
