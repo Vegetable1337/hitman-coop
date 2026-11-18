@@ -39,6 +39,12 @@ namespace HitmanCoopSetup
         public const string Author = "Jordan Rodrigues";
         public const string Website = "https://github.com/JordanRodrigues021/hitman-coop";
         public const string Discord = "https://discord.gg/rQeHdpbKUp";
+        public static readonly bool SteamPreview =
+#if STEAM_PREVIEW
+            true;
+#else
+            false;
+#endif
 
         public static string ExePath
         {
@@ -828,7 +834,14 @@ namespace HitmanCoopSetup
             Btn(card, m_Game == null ? "Browse..." : "Change", Pill.Kind.Secondary, card.Width - Theme.S(132), (card.Height - Theme.S(36)) / 2, Theme.S(112), Theme.S(36), ChangeGame);
 
             int y = Theme.S(318);
-            if (m_Game != null && !Payload.HasBuild(m_Game.Build) || m_Game != null && !m_Game.Version.StartsWith(m_Game.Build + "."))
+            bool unsupportedPreview = Program.SteamPreview && m_Game != null && !Games.SupportsSteamPreview(m_Game);
+            if (unsupportedPreview)
+            {
+                Lbl(m_Page, "This installer requires the Steam version of HITMAN 3.290.1.",
+                    Theme.Ui(12.5f), Theme.Amber, Theme.S(110), y, W - Theme.S(220));
+                y += Theme.S(26);
+            }
+            else if (!Program.SteamPreview && m_Game != null && (!Payload.HasBuild(m_Game.Build) || !m_Game.Version.StartsWith(m_Game.Build + ".")))
             {
                 Lbl(m_Page, "\u26A0  There's no HITMAN Co-op build for game " + m_Game.Version + " yet. It installs, but co-op stays off until the game is updated.",
                     Theme.Ui(12.5f), Theme.Amber, Theme.S(110), y, W - Theme.S(220));
@@ -855,7 +868,7 @@ namespace HitmanCoopSetup
                 m_Game.InstalledModVersion == Program.Version ? "Repair" : "Update";
             install = Btn(m_Page, verb, Pill.Kind.Primary, (W - Theme.S(240)) / 2, Math.Max(y + Theme.S(8), Theme.S(330)), Theme.S(240), Theme.S(52), RunInstall);
             install.Font = Theme.Ui(17, true);
-            install.Enabled = m_Game != null;
+            install.Enabled = m_Game != null && !unsupportedPreview;
             AcceptButtonOf(install);
 
             var links = new List<KeyValuePair<string, Action>>();
@@ -863,7 +876,8 @@ namespace HitmanCoopSetup
             string test = Path.Combine(Payload.Dir ?? "", "Test-Connection.exe");
             if (File.Exists(test))
                 links.Add(new KeyValuePair<string, Action>("Test a connection", delegate { try { Process.Start(new ProcessStartInfo(test) { UseShellExecute = true, WorkingDirectory = Payload.Dir }); } catch { } }));
-            links.Add(new KeyValuePair<string, Action>("Set up Tailscale only", delegate { m_UseTailscale = true; ShowTailscale(false); }));
+            if (!Program.SteamPreview)
+                links.Add(new KeyValuePair<string, Action>("Set up Tailscale only", delegate { m_UseTailscale = true; ShowTailscale(false); }));
 
             int lx = 0;
             var made = new List<Pill>();
@@ -1005,7 +1019,8 @@ namespace HitmanCoopSetup
                 WriteInstallLog(game);
                 if (e != null) { ShowError(e, RunInstall); return; }
                 m_Game = Games.Inspect(game.Path);
-                ShowConnect();
+                if (Program.SteamPreview) ShowDone();
+                else ShowConnect();
             });
         }
 
@@ -1259,8 +1274,13 @@ namespace HitmanCoopSetup
             string how = m_UseTailscale && m_Ts != null && m_Ts.Address != null
                 ? "Tailscale: the host clicks HOST; the partner joins with the host's Tailscale address (yours is " + m_Ts.Address + ")."
                 : "Join code: the host clicks HOST and sends the code; the partner pastes it and clicks JOIN.";
+            if (Program.SteamPreview)
+                how = "In CO-OP > Play, choose HOST VIA STEAM, then Invite Steam friend. Your friend accepts in Steam.";
             Lbl(m_Page, how, Theme.Ui(13), Theme.Faint, Theme.S(80), Theme.S(226), W - Theme.S(160), ContentAlignment.TopCenter);
-            Lbl(m_Page, "Both of you need HITMAN Co-op " + Program.Version + ", and each your own Steam or Epic account.", Theme.Ui(13), Theme.Faint, Theme.S(80), Theme.S(266), W - Theme.S(160), ContentAlignment.TopCenter);
+            string requirements = Program.SteamPreview
+                ? "Install this build on both PCs and enable the Steam Overlay."
+                : "Both of you need HITMAN Co-op " + Program.Version + ", and each your own Steam or Epic account.";
+            Lbl(m_Page, requirements, Theme.Ui(13), Theme.Faint, Theme.S(80), Theme.S(266), W - Theme.S(160), ContentAlignment.TopCenter);
 
             int bw = Theme.S(200), gap = Theme.S(12);
             bool steam = m_Game != null && m_Game.Store == "Steam";

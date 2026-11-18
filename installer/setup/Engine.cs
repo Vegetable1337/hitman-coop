@@ -210,7 +210,7 @@ namespace HitmanCoopSetup
 
             string exeDir = AppDomain.CurrentDomain.BaseDirectory;
 
-            if (IsPayloadDir(exeDir))
+            if (!Program.SteamPreview && IsPayloadDir(exeDir))
             {
                 Dir = exeDir;
                 Verify();
@@ -351,10 +351,22 @@ namespace HitmanCoopSetup
                 string key;
                 try { key = Path.GetFullPath(p).TrimEnd('\\'); }
                 catch { continue; }
-                if (seen.Add(key)) found.Add(Inspect(key));
+                if (!seen.Add(key)) continue;
+                GameInstall game = Inspect(key);
+                if (!Program.SteamPreview || SupportsSteamPreview(game)) found.Add(game);
             }
 
             return found;
+        }
+
+        public static bool SupportsSteamPreview(GameInstall game)
+        {
+            var common = Directory.GetParent(game.Path);
+            return common != null && common.Parent != null &&
+                common.Name.Equals("common", StringComparison.OrdinalIgnoreCase) &&
+                common.Parent.Name.Equals("steamapps", StringComparison.OrdinalIgnoreCase) &&
+                game.Version == "3.290.1" &&
+                File.Exists(Path.Combine(game.Retail, "steam_api64.dll"));
         }
 
         public static List<string> StoreBuilds()
@@ -571,6 +583,9 @@ namespace HitmanCoopSetup
         {
             if (!Games.IsGameDir(game.Path)) throw new SetupException("There's no Retail\\HITMAN3.exe in " + game.Path + ".");
             if (Games.GameRunning()) throw new SetupException("HITMAN is running.", "Close the game, then try again.");
+            if (Program.SteamPreview && !Games.SupportsSteamPreview(game))
+                throw new SetupException("This setup requires HITMAN 3.290.1 for Steam.",
+                    "Select the game's folder in a Steam library.");
 
             string retail = game.Retail;
             string payload = Payload.FilesFor(game.Build);
@@ -648,7 +663,7 @@ namespace HitmanCoopSetup
             progress(88, "Tuning the game for co-op");
             try
             {
-                if (TuneGame) GameFiles.Apply(retail, manifest.GameTweaks, log);
+                if (TuneGame && !Program.SteamPreview) GameFiles.Apply(retail, manifest.GameTweaks, log);
             }
             catch (Exception e)
             {
@@ -673,8 +688,32 @@ namespace HitmanCoopSetup
                 throw new SetupException("Couldn't turn the mod on in Retail\\mods.ini.");
 
             manifest.Save(retail);
+            if (Program.SteamPreview)
+                DisableUpstreamUpdates(Path.Combine(retail, "mods", "HitmanCoop.ini"));
             progress(100, "Installed");
             log("Installed HITMAN Co-op into " + game.Path);
+        }
+
+        static void DisableUpstreamUpdates(string ini)
+        {
+            var lines = File.Exists(ini) ? File.ReadAllLines(ini).ToList() : new List<string>();
+            int header = lines.FindIndex(line => line.Trim().Equals("[general]", StringComparison.OrdinalIgnoreCase));
+            if (header < 0)
+            {
+                header = lines.Count;
+                lines.Add("[general]");
+            }
+            bool found = false;
+            for (int i = header + 1; i < lines.Count && !lines[i].TrimStart().StartsWith("["); ++i)
+            {
+                int equals = lines[i].IndexOf('=');
+                if (equals <= 0 || !lines[i].Substring(0, equals).Trim().Equals("auto_update", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                lines[i] = "auto_update = false";
+                found = true;
+            }
+            if (!found) lines.Insert(header + 1, "auto_update = false");
+            File.WriteAllLines(ini, lines.ToArray(), new UTF8Encoding(false));
         }
 
         public static void Uninstall(GameInstall game, bool keepSettings, Action<string> log)
@@ -709,7 +748,11 @@ namespace HitmanCoopSetup
 
                 bool hadLoader = m.Backups.Count > 0;
                 if (others.Count > 0 && !hadLoader)
+                {
                     log("Other SDK mods are on, so the mod loader stays.");
+                    if (Program.SteamPreview && m.Added.Contains(@"mods\HitmanCoop.sym", StringComparer.OrdinalIgnoreCase))
+                        TryDelete(Path.Combine(retail, "mods", "HitmanCoop.sym"));
+                }
                 else
                     foreach (string rel in m.Added) TryDelete(Path.Combine(retail, rel));
 
